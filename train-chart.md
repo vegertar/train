@@ -324,10 +324,10 @@ In more ordinary scenes, affinity constant is defined between hosts, in which th
 ```
       | z (ISP)
       |
-	    |       .
-	    |      (A)
-	    |
-	  O /------------------- y (city)
+      |       .
+      |      (A)
+      |
+    O /------------------- y (city)
  .   /
 (B) /
    /
@@ -337,3 +337,5 @@ In more ordinary scenes, affinity constant is defined between hosts, in which th
 After calculating a value of affinity between two hosts, we eventually need to map it into latency and apply which by `comcast`.
 
 ### Connectivity
+
+TODO: check if this graph is connected
