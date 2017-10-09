@@ -298,4 +298,42 @@ func TestListenHTTP(t *testing.T) {
 }
 ```
 
-In the end, running `go test` should print `PASS`. Readers might notice that `comcast` flag `--default-bw=5` appeared as well, because of on Linux, the traffic control is implemented by command `tc`, which isn't as accurate as `pfctl` on Darwin. But it doesn't matter that how accurate `comcast` provides, the point is there is a soft way that we can simulate the internet.
+In the end, running `go test` should print `PASS`. Readers might notice that `comcast` flag `--default-bw=5` appeared as well, because of on Linux, the traffic control is implemented by command `tc`, which isn't as accurate as `pfctl` on Darwin. But it doesn't matter that how accurate `comcast` can do, the point is there has been a programmatic way that we can simulate the internet.
+
+### Isolation
+
+At previous section, we have created a HTTP server, however, there was no further information except a port to identify a host. Right here, we're gonna be citylizing a HTTP server by associating a port with a 4-digit [city code](https://raw.githubusercontent.com/modood/Administrative-divisions-of-China/master/dist/pc-code.json). Actually, there are 338 cities in total, it is easy to use a hash way or directly lookup a table.
+
+Next, it is necessary to define an affinity between cities. Let's use 1-digit numbers as the affinity constant, 0 means a city is completely isolate to another, a greater number means a more open isolation, until 9 which means a city is thoroughly open to another. For simplicity, considering of a demonstrated function below.
+
+```go
+func CityAffinity(codeA, codeB string) int {
+	// for same cities
+	if codeA == codeA { return 9 }
+	// for within a same province
+	if codeA[:2] == codeB[:2] {	return 5 }
+	// for within a same district
+	if codeA[:1] == codeB[:1] { return 1 }
+	// others
+	return 0
+}
+```
+
+In more ordinary scenes, affinity constant is defined between hosts, in which the isolation is not limited by city, but also, as we said, by ISP. So, a 3-D coordinate system can be given as below, A and B are a host within a specific city and ISP, where in plane y-z and x-z respectively, then the distance of segment AB is used as value of affinity between two hosts. Obviously, less distance stands for less isolation.
+
+```
+      | z (ISP)
+      |
+	    |       .
+	    |      (A)
+	    |
+	  O /------------------- y (city)
+ .   /
+(B) /
+   /
+  / x (city)
+```
+
+After calculating a value of affinity between two hosts, we eventually need to map it into latency and apply which by `comcast`.
+
+### Connectivity
