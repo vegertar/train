@@ -1,15 +1,19 @@
-<!-- TOC depthFrom:1 depthTo:6 withLinks:1 updateOnSave:1 orderedList:0 -->
+<!-- TOC -->
 
-- [Train Chart](#train-chart)
-	- [ISP & Region](#isp-region)
-		- [First-Class Core](#first-class-core)
-		- [Second-Class Influx](#second-class-influx)
-		- [Third-Class Capital](#third-class-capital)
-	- [Reachable Restriction](#reachable-restriction)
-	- [Simulation](#simulation)
+- [Train](#train)
+    - [ISP & Region](#isp--region)
+        - [First-Class Core](#first-class-core)
+        - [Second-Class Influx](#second-class-influx)
+        - [Third-Class Capital](#third-class-capital)
+    - [Reachable Restriction](#reachable-restriction)
+    - [Simulation](#simulation)
+        - [Basic HTTP Server](#basic-http-server)
+        - [Speed Measurement](#speed-measurement)
+        - [Isolation](#isolation)
+        - [Connectivity](#connectivity)
 
 <!-- /TOC -->
-# Train Chart
+# Train
 
 This document briefly described the minimum restriction of interconnect ability between two IDCs and how to build connections above these restrictions cross all over network (currently only covering China mainland).
 

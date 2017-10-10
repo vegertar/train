@@ -1,14 +1,14 @@
 package simnet
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
-	"os/exec"
+	"net/http/httptest"
 	"testing"
-	"time"
 )
 
 func ifNameOf(ipAddr string) string {
@@ -34,25 +34,63 @@ func ifNameOf(ipAddr string) string {
 
 var loName = ifNameOf("127.0.0.1")
 
+func TestHandler(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(Handler))
+	defer ts.Close()
+
+	t.Run("Banner", func(t *testing.T) {
+		res, err := http.Get(ts.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if res.StatusCode != 200 {
+			t.Errorf("expected 200, got %v", res.StatusCode)
+		}
+
+		defer res.Body.Close()
+	})
+
+	t.Run("Download", func(t *testing.T) {
+		units := []string{"k", "m"}
+		for i := 0; i < 9; i++ {
+			for _, unit := range units {
+				url := fmt.Sprintf("%s/%d%s", ts.URL, i, unit)
+				res, err := http.Get(url)
+				if err != nil {
+					t.Fatalf("%s: %v", url, err)
+				}
+
+				if res.StatusCode != 200 {
+					t.Errorf("%s: expected status code 200, got %d", url, res.StatusCode)
+				}
+
+				n, err := io.Copy(ioutil.Discard, res.Body)
+				if err != nil {
+					t.Fatalf("%s: %v", url, err)
+				}
+				size := int64(i)
+				switch unit {
+				case "k", "K":
+					size *= 1024
+				case "m", "M":
+					size *= 1024 * 1024
+				}
+				if size != n {
+					t.Errorf("%s: expected content length %d, got %d", url, size, n)
+				}
+			}
+		}
+	})
+}
+
 func TestListenHTTP(t *testing.T) {
-	port, err := ListenHTTP()
+	port, err := ListenHTTP(context.Background())
 	if err != nil {
 		t.Fatal("listens an HTTP:", err)
 	}
 
-	deviceFlag := fmt.Sprintf("--device=%v", loName)
-	b, err := exec.Command("comcast", deviceFlag, "--target-bw=8", "--default-bw=5", "--target-proto=tcp", "--target-addr=127.0.0.1", fmt.Sprintf("--target-port=%v", port)).CombinedOutput()
-	if b != nil {
-		t.Log(string(b))
-	}
-	if err != nil {
-		t.Fatal(err)
-	} else {
-		defer exec.Command("comcast", deviceFlag, "--stop").Run()
-	}
-
-	since := time.Now()
-	url := fmt.Sprintf("http://127.0.0.1:%v/4k", port)
+	url := fmt.Sprintf("http://127.0.0.1:%v", port)
 	resp, err := http.Get(url)
 	if err != nil {
 		t.Fatal("requests", url, ":", err)
@@ -61,15 +99,40 @@ func TestListenHTTP(t *testing.T) {
 		t.Errorf("expected HTTP code 200, got %v", resp.StatusCode)
 	}
 	defer resp.Body.Close()
+}
 
-	n, err := io.Copy(ioutil.Discard, resp.Body)
-	if elapsed := time.Since(since); elapsed < 4*time.Second {
-		t.Errorf("expected elapse >= 4s, got %v", elapsed)
-	}
+func TestCreateServers(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
+	rlimit, err := getFileLimit()
 	if err != nil {
-		t.Errorf("reading from %v: %v", url, err)
-	} else if n != 4*1024 {
-		t.Errorf("expected content size 4k, got %v", n)
+		t.Fatal(err)
 	}
+	t.Run(fmt.Sprintf("by %v", rlimit), func(t *testing.T) {
+		_, err := CreateServers(ctx, int(rlimit))
+		if err == nil {
+			t.Fatal("expected an error, got nil")
+		}
+	})
+
+	n := int(rlimit / 10)
+	t.Run(fmt.Sprintf("by %v", n), func(t *testing.T) {
+		ports, err := CreateServers(ctx, n)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for _, port := range ports {
+			url := fmt.Sprintf("http://127.0.0.1:%v", port)
+			resp, err := http.Get(url)
+			if err != nil {
+				t.Fatal("requests", url, ":", err)
+			}
+			if resp.StatusCode != 200 {
+				t.Errorf("expected HTTP code 200, got %v", resp.StatusCode)
+			}
+			resp.Body.Close()
+		}
+	})
 }
