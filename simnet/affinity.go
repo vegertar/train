@@ -1,6 +1,9 @@
 package simnet
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // City contains basic properties about a city.
 type City struct {
@@ -12,11 +15,42 @@ type City struct {
 	}
 }
 
-var cities map[string]City
+func (c City) String() string {
+	return fmt.Sprintf("%s-%s", c.Province.Name, c.Name)
+}
+
+// ISP represents an ISP.
+type ISP int
+
+func (i ISP) String() string {
+	return fmt.Sprintf("ISP-%d", int(i))
+}
+
+// PortToCityISP converts a port integer to a pair of city and ISP.
+func PortToCityISP(port int) (City, ISP) {
+	code := codes[port%len(codes)]
+	return cities[code], ISP(port % amountsOfISP)
+}
+
+// SetAffinity sets arbitrary ports affinitty.
+func SetAffinity(ports []int) {
+	for _, a := range ports {
+		cityA, ispA := PortToCityISP(a)
+		for _, b := range ports {
+			cityB, ispB := PortToCityISP(b)
+
+		}
+	}
+}
+
+var (
+	cities map[string]City
+	codes  []string
+)
 
 func init() {
 	var table interface{}
-	if err := json.Unmarshal([]byte(china), &table); err != nil {
+	if err := json.Unmarshal([]byte(chinaCity), &table); err != nil {
 		panic(err)
 	}
 
@@ -32,13 +66,18 @@ func init() {
 				city.Province.Name = provinceName
 
 				cities[city.Code] = city
+				codes = append(codes, city.Code)
 			}
 		}
 	}
 }
 
-// china is a JSON string contains all provinces and cities
-const china = `
+// it's no big deal that what ISPs are, so just given the amounts of ISP.
+const amountsOfISP = 64
+
+// chinaCity is a JSON string downloaded from https://raw.githubusercontent.com/modood/Administrative-divisions-of-China/master/dist/pc-code.json,
+// which contains all China provinces and cities
+const chinaCity = `
 [
 	{
 	  "code": "11",

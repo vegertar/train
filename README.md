@@ -10,7 +10,6 @@
         - [Basic HTTP Server](#basic-http-server)
         - [Speed Measurement](#speed-measurement)
         - [Isolation](#isolation)
-        - [Connectivity](#connectivity)
 
 <!-- /TOC -->
 # Train
@@ -29,11 +28,11 @@ The second and cheapest idea is an overlay network, like CDN does, but this time
 
 Suppose we have hundreds of IDCs located in hundreds of cities serve whole country with tens of ISPs. We have no idea that how these ISPs built their network bone and how they peering with others and how they discarding packets from or to other ISPs or even other regions. Fortunately, we could be inspiring from geography.
 
-China (mainland) is separated into 7 districts. Most of citizens are living in southeast, especially, there are 3 super cities, Beijing, Shanghai, and Guangzhou, which are also the heart of China-North, China-East and China-South respectively. So China (mainland) is supposed to be organized as a 3-layer tree in geography.
+China (mainland) is separated into 7 districts. Most of citizens are living in southeast, especially, there are 3 super cities, Beijing, Shanghai, and Guangzhou, where are also the heart of China-North, China-East and China-South respectively. So China (mainland) is supposed to be organized as a 3-layer tree in geography.
 
 ### First-Class Core
 
-Obviously, first-class cores consist of all 3 super cities: Beijing, Shanghai, Guangzhou. Not only these cities are the actual cores of administration, economy and high-tech, but also Bei-Shang-Guang is the most incredible population influx, any company who want to serve whole country must take meaningful projects on these places, as we have seen, the 3 biggest ISPs (CNC, CTC, CMCC) are built on Beijing, the largest third-party DC provider (TianDiXiangYun) of China-South is based on Beijing, too. In other words, if we are going to communicate with the rest of China, we need be able to communicate with Bei-Shang-Guang directly or indirectly.
+Obviously, first-class cores consist of all 3 super cities: Beijing, Shanghai, Guangzhou. Not only these cities are the actual cores of administration, economy and high-tech, but also Bei-Shang-Guang is the most incredible population influx, any company who wants to serve whole country must take meaningful projects on these places, as we have seen, the 3 biggest ISPs (CNC, CTC, CMCC) are built on Beijing, the largest third-party DC provider (TianDiXiangYun) of China-South is based on Beijing, too. In other words, if we are going to communicate with the rest of China, we need be able to communicate with Bei-Shang-Guang directly or indirectly.
 
 ### Second-Class Influx
 
@@ -41,7 +40,7 @@ China is big enough that no single region can provide low-latency and low-price 
 
 ### Third-Class Capital
 
-All province capitals except of mentioned cities early are considered as the third-class capitals, they are responsible for taking communicates between second-class influx of present district and local region, or communicating with other capitals within same district.
+All province capitals except of mentioned cities earlier are considered as the third-class capitals, they are responsible for taking communicates between second-class influx of present district and local region, or communicating with other capitals within same district.
 
 From now on, any province capitals in China can talk to each other at least in logical organization chart. For example, if Kunming would like to reach to Hangzhou, the routing path might be `Kunming->Chengdu->Shanghai->Hangzhou`.
 
@@ -71,7 +70,7 @@ We have already defined a province as a minimal cell, so for multiple ones which
 
 For instance, if `Dali` reaches to `Ningbo`, then all the capitals are *Kunming*, **Chengdu**, ***Shanghai***, *Hangzhou*.
 
-Because of business competitions and government policies, no single ISP is large enough to serve everywhere, so as we mentioned early, there are multiple ISPs eventually in the same province.
+Because of business competitions and government policies, no single ISP is large enough to serve everywhere, so as we mentioned earlier, there are multiple ISPs eventually in the same province.
 
 Can multiple IDCs from different ISPs be interconnected? There is no promise, furthermore, this is why the multi-room exists. However, the worse is, a multi-room cannot swear for communicating with any unknown ISP, otherwise it will become the incredible and impossible single ISP covering everywhere.
 
@@ -84,6 +83,7 @@ After defining base, we can give the last restriction.
 Considering of any ISP unable to reach from or to base ISP, we can fix the unmanageable one by extending which into base.
 
 Therefore, by defining 3 restrictions, we can connect any two IDC from everywhere. Let's list all items together.
+
 - All IDCs within same province and same ISP construct a connected graph.
 - Existing an IDC on capital of down region can reach to an IDC on capital of up region with same ISP.
 - Existing an IDC can reach to one of the base ISPs for any ISP within same province. Base is the minimal set of ISPs that our management machine built on.
@@ -160,7 +160,7 @@ Running `go test` should print `PASS`.
 
 ### Speed Measurement
 
-Since the environment is built on LAN, so simply calculates speed values from downloading size divide by its elapse isn't enough, it still needs to operates the LAN QoS. Fortunately, thanks to [comcast](https://github.com/tylertreat/comcast) which provides a really easy way to do the stuff.
+Since the environment is built on LAN, so simply calculates speed values from downloading size divide by elapse isn't enough, it still needs to operates the LAN QoS. Fortunately, thanks to [comcast](https://github.com/tylertreat/comcast) which provides a really easy way to do the stuff.
 
 Firstly, updating the `simnet.go` so that which could serve a speed test.
 
@@ -302,7 +302,7 @@ func TestListenHTTP(t *testing.T) {
 }
 ```
 
-In the end, running `go test` should print `PASS`. Readers might notice that `comcast` flag `--default-bw=5` appeared as well, because of on Linux, the traffic control is implemented by command `tc`, which isn't as accurate as `pfctl` on Darwin. But it doesn't matter that how accurate `comcast` can do, the point is there has been a programmatic way that we can simulate the internet.
+In the end, running `go test` should print `PASS`. Readers might notice that `comcast` flag `--default-bw=5` appeared as well, because of on Linux, the traffic control is implemented by command `tc`, which isn't as accurate as `pfctl` on Darwin. But it doesn't matter that how accurate `comcast` can do, the point is there has been a programmatic way that we can simulate the Internet.
 
 ### Isolation
 
@@ -323,22 +323,18 @@ func CityAffinity(codeA, codeB string) int {
 }
 ```
 
-In more ordinary scenes, affinity constant is defined between hosts, in which the isolation is not limited by city, but also, as we said, by ISP. So, a 3-D coordinate system can be given as below, A and B are a host within a specific city and ISP, where in plane y-z and x-z respectively, then the distance of segment AB is used as value of affinity between two hosts. Obviously, less distance stands for less isolation.
+In more ordinary scenes, affinity constant is defined between hosts, in which the isolation is not only limited by city, but also, as we said, by ISP. So, a coordinate system can be given as below, the x-axis orders cities by administrative regions (e.g. two cities in same province are placed closer than not), the y-axis orders ISPs by business relationships (e.g. CMCC and CNNET can be put together). A and B are a host within an arbitrary city and ISP respectively, then segment AB is used to estimate the value of affinity between two hosts. Obviously, less distance stands for less isolation.
 
 ```
-      | z (ISP)
+      | y (ISP)
       |
-      |       .
-      |      (A)
-      |
-    O /------------------- y (city)
- .   /
-(B) /
-   /
-  / x (city)
-```
+      |            .
+      |    .      (B)
+      |   (A)
+    O +------------------- x (city)
+ ```
 
-After calculating a value of affinity between two hosts, we eventually need to map it into latency and apply which by `comcast`.
+After calculating a value of affinity between hosts, we eventually need to map it into a latency and apply which by `comcast`.
 
 ### Connectivity
 
