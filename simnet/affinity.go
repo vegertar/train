@@ -3,20 +3,20 @@ package simnet
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"strconv"
 )
 
 // City contains basic properties about a city.
 type City struct {
-	Code     string
+	ID       int
 	Name     string
-	Province struct {
-		Code string
-		Name string
-	}
+	Province string
+	District string
 }
 
 func (c City) String() string {
-	return fmt.Sprintf("%s-%s", c.Province.Name, c.Name)
+	return fmt.Sprintf("%s(%d)", c.Name, c.ID)
 }
 
 // ISP represents an ISP.
@@ -26,1611 +26,514 @@ func (i ISP) String() string {
 	return fmt.Sprintf("ISP-%d", int(i))
 }
 
-// PortToCityISP converts a port integer to a pair of city and ISP.
-func PortToCityISP(port int) (City, ISP) {
-	code := codes[port%len(codes)]
-	return cities[code], ISP(port % amountsOfISP)
+// Point is a pair of city and ISP.
+type Point struct {
+	City City
+	ISP  ISP
 }
 
-// SetAffinity sets arbitrary ports affinitty.
+// NewPoint creates a point from a port integer.
+func NewPoint(port int) Point {
+	city := names[port%len(names)]
+	return Point{cities[city], ISP(port % numberOfISP)}
+}
+
+// NewPointFromCity creates a point from a city where specified by name.
+func NewPointFromCity(city string) Point {
+	return Point{City: cities[city]}
+}
+
+// Isolate returns a value of isolation of two points.
+func Isolate(a, b Point) float64 {
+	aX := float64(a.City.ID-minCityID) / float64(maxCityID-minCityID)
+	aY := float64(a.ISP) / float64(numberOfISP-1)
+
+	bX := float64(b.City.ID-minCityID) / float64(maxCityID-minCityID)
+	bY := float64(b.ISP) / float64(numberOfISP-1)
+
+	diffX, diffY := aX-bX, aY-bY
+	return math.Sqrt(diffX*diffX + diffY*diffY)
+}
+
+// SetAffinity sets arbitrary ports affinity.
 func SetAffinity(ports []int) {
 	for _, a := range ports {
-		cityA, ispA := PortToCityISP(a)
 		for _, b := range ports {
-			cityB, ispB := PortToCityISP(b)
-
+			pA, pB := NewPoint(a), NewPoint(b)
+			isolation := Isolate(pA, pB)
+			fmt.Println(isolation)
 		}
 	}
 }
 
 var (
-	cities map[string]City
-	codes  []string
+	cities               = make(map[string]City)
+	minCityID, maxCityID int
+	names                []string
 )
 
 func init() {
-	var table interface{}
+	var table map[string]interface{}
 	if err := json.Unmarshal([]byte(chinaCity), &table); err != nil {
 		panic(err)
 	}
 
-	for _, v1 := range table.([]interface{}) {
-		v2 := v1.(map[string]interface{})
-		provinceCode, provinceName := v2["code"].(string), v2["name"].(string)
-		if childs := v2["childs"]; childs != nil {
-			for _, v3 := range childs.([]interface{}) {
-				v4 := v3.(map[string]interface{})
-				var city City
-				city.Code, city.Name = v4["code"].(string), v4["name"].(string)
-				city.Province.Code = provinceCode
-				city.Province.Name = provinceName
-
-				cities[city.Code] = city
-				codes = append(codes, city.Code)
+	var (
+		districtIndex, provinceIndex int
+		minCityID                    = int(math.MaxInt32)
+	)
+	for provinceName, v1 := range table {
+		provinceIndex++
+		for i, v2 := range v1.([]interface{}) {
+			var city City
+			city.Name = v2.(string)
+			city.Province = provinceName
+			switch provinceName {
+			case "北京市", "天津市", "河北省", "山西省", "内蒙古自治区":
+				city.District = "华北"
+				districtIndex = 1
+			case "河南省", "湖北省", "湖南省":
+				city.District = "华中"
+				districtIndex = 2
+			case "广西壮族自治区", "广东省", "海南省":
+				city.District = "华南"
+				districtIndex = 3
+			case "山东省", "江苏省", "安徽省", "浙江省", "福建省", "江西省":
+				city.District = "华东"
+				districtIndex = 4
+			case "新疆维吾尔自治区", "青海省", "甘肃省", "宁夏回族自治区", "陕西省":
+				city.District = "西北"
+				districtIndex = 5
+			case "西藏自治区", "四川省", "重庆市", "贵州省", "云南省":
+				city.District = "西南"
+				districtIndex = 6
+			default:
+				continue
 			}
+
+			city.ID, _ = strconv.Atoi(fmt.Sprintf("%v%03v%03v", districtIndex, provinceIndex, i))
+			if city.ID < minCityID {
+				minCityID = city.ID
+			}
+			if city.ID > maxCityID {
+				maxCityID = city.ID
+			}
+
+			cities[city.Name] = city
+			names = append(names, city.Name)
 		}
 	}
 }
 
 // it's no big deal that what ISPs are, so just given the amounts of ISP.
-const amountsOfISP = 64
+const numberOfISP = 42
 
-// chinaCity is a JSON string downloaded from https://raw.githubusercontent.com/modood/Administrative-divisions-of-China/master/dist/pc-code.json,
+// chinaCity is a JSON string downloaded from https://raw.githubusercontent.com/modood/Administrative-divisions-of-China/master/dist/pc.json,
 // which contains all China provinces and cities
 const chinaCity = `
-[
-	{
-	  "code": "11",
-	  "name": "北京市",
-	  "childs": [
-		{
-		  "code": "1101",
-		  "name": "北京市"
-		}
-	  ]
-	},
-	{
-	  "code": "12",
-	  "name": "天津市",
-	  "childs": [
-		{
-		  "code": "1201",
-		  "name": "天津市"
-		}
-	  ]
-	},
-	{
-	  "code": "13",
-	  "name": "河北省",
-	  "childs": [
-		{
-		  "code": "1301",
-		  "name": "石家庄市"
-		},
-		{
-		  "code": "1302",
-		  "name": "唐山市"
-		},
-		{
-		  "code": "1303",
-		  "name": "秦皇岛市"
-		},
-		{
-		  "code": "1304",
-		  "name": "邯郸市"
-		},
-		{
-		  "code": "1305",
-		  "name": "邢台市"
-		},
-		{
-		  "code": "1306",
-		  "name": "保定市"
-		},
-		{
-		  "code": "1307",
-		  "name": "张家口市"
-		},
-		{
-		  "code": "1308",
-		  "name": "承德市"
-		},
-		{
-		  "code": "1309",
-		  "name": "沧州市"
-		},
-		{
-		  "code": "1310",
-		  "name": "廊坊市"
-		},
-		{
-		  "code": "1311",
-		  "name": "衡水市"
-		}
-	  ]
-	},
-	{
-	  "code": "14",
-	  "name": "山西省",
-	  "childs": [
-		{
-		  "code": "1401",
-		  "name": "太原市"
-		},
-		{
-		  "code": "1402",
-		  "name": "大同市"
-		},
-		{
-		  "code": "1403",
-		  "name": "阳泉市"
-		},
-		{
-		  "code": "1404",
-		  "name": "长治市"
-		},
-		{
-		  "code": "1405",
-		  "name": "晋城市"
-		},
-		{
-		  "code": "1406",
-		  "name": "朔州市"
-		},
-		{
-		  "code": "1407",
-		  "name": "晋中市"
-		},
-		{
-		  "code": "1408",
-		  "name": "运城市"
-		},
-		{
-		  "code": "1409",
-		  "name": "忻州市"
-		},
-		{
-		  "code": "1410",
-		  "name": "临汾市"
-		},
-		{
-		  "code": "1411",
-		  "name": "吕梁市"
-		}
-	  ]
-	},
-	{
-	  "code": "15",
-	  "name": "内蒙古自治区",
-	  "childs": [
-		{
-		  "code": "1501",
-		  "name": "呼和浩特市"
-		},
-		{
-		  "code": "1502",
-		  "name": "包头市"
-		},
-		{
-		  "code": "1503",
-		  "name": "乌海市"
-		},
-		{
-		  "code": "1504",
-		  "name": "赤峰市"
-		},
-		{
-		  "code": "1505",
-		  "name": "通辽市"
-		},
-		{
-		  "code": "1506",
-		  "name": "鄂尔多斯市"
-		},
-		{
-		  "code": "1507",
-		  "name": "呼伦贝尔市"
-		},
-		{
-		  "code": "1508",
-		  "name": "巴彦淖尔市"
-		},
-		{
-		  "code": "1509",
-		  "name": "乌兰察布市"
-		},
-		{
-		  "code": "1522",
-		  "name": "兴安盟"
-		},
-		{
-		  "code": "1525",
-		  "name": "锡林郭勒盟"
-		},
-		{
-		  "code": "1529",
-		  "name": "阿拉善盟"
-		}
-	  ]
-	},
-	{
-	  "code": "21",
-	  "name": "辽宁省",
-	  "childs": [
-		{
-		  "code": "2101",
-		  "name": "沈阳市"
-		},
-		{
-		  "code": "2102",
-		  "name": "大连市"
-		},
-		{
-		  "code": "2103",
-		  "name": "鞍山市"
-		},
-		{
-		  "code": "2104",
-		  "name": "抚顺市"
-		},
-		{
-		  "code": "2105",
-		  "name": "本溪市"
-		},
-		{
-		  "code": "2106",
-		  "name": "丹东市"
-		},
-		{
-		  "code": "2107",
-		  "name": "锦州市"
-		},
-		{
-		  "code": "2108",
-		  "name": "营口市"
-		},
-		{
-		  "code": "2109",
-		  "name": "阜新市"
-		},
-		{
-		  "code": "2110",
-		  "name": "辽阳市"
-		},
-		{
-		  "code": "2111",
-		  "name": "盘锦市"
-		},
-		{
-		  "code": "2112",
-		  "name": "铁岭市"
-		},
-		{
-		  "code": "2113",
-		  "name": "朝阳市"
-		},
-		{
-		  "code": "2114",
-		  "name": "葫芦岛市"
-		}
-	  ]
-	},
-	{
-	  "code": "22",
-	  "name": "吉林省",
-	  "childs": [
-		{
-		  "code": "2201",
-		  "name": "长春市"
-		},
-		{
-		  "code": "2202",
-		  "name": "吉林市"
-		},
-		{
-		  "code": "2203",
-		  "name": "四平市"
-		},
-		{
-		  "code": "2204",
-		  "name": "辽源市"
-		},
-		{
-		  "code": "2205",
-		  "name": "通化市"
-		},
-		{
-		  "code": "2206",
-		  "name": "白山市"
-		},
-		{
-		  "code": "2207",
-		  "name": "松原市"
-		},
-		{
-		  "code": "2208",
-		  "name": "白城市"
-		},
-		{
-		  "code": "2224",
-		  "name": "延边朝鲜族自治州"
-		}
-	  ]
-	},
-	{
-	  "code": "23",
-	  "name": "黑龙江省",
-	  "childs": [
-		{
-		  "code": "2301",
-		  "name": "哈尔滨市"
-		},
-		{
-		  "code": "2302",
-		  "name": "齐齐哈尔市"
-		},
-		{
-		  "code": "2303",
-		  "name": "鸡西市"
-		},
-		{
-		  "code": "2304",
-		  "name": "鹤岗市"
-		},
-		{
-		  "code": "2305",
-		  "name": "双鸭山市"
-		},
-		{
-		  "code": "2306",
-		  "name": "大庆市"
-		},
-		{
-		  "code": "2307",
-		  "name": "伊春市"
-		},
-		{
-		  "code": "2308",
-		  "name": "佳木斯市"
-		},
-		{
-		  "code": "2309",
-		  "name": "七台河市"
-		},
-		{
-		  "code": "2310",
-		  "name": "牡丹江市"
-		},
-		{
-		  "code": "2311",
-		  "name": "黑河市"
-		},
-		{
-		  "code": "2312",
-		  "name": "绥化市"
-		},
-		{
-		  "code": "2327",
-		  "name": "大兴安岭地区"
-		}
-	  ]
-	},
-	{
-	  "code": "31",
-	  "name": "上海市",
-	  "childs": [
-		{
-		  "code": "3101",
-		  "name": "上海市"
-		}
-	  ]
-	},
-	{
-	  "code": "32",
-	  "name": "江苏省",
-	  "childs": [
-		{
-		  "code": "3201",
-		  "name": "南京市"
-		},
-		{
-		  "code": "3202",
-		  "name": "无锡市"
-		},
-		{
-		  "code": "3203",
-		  "name": "徐州市"
-		},
-		{
-		  "code": "3204",
-		  "name": "常州市"
-		},
-		{
-		  "code": "3205",
-		  "name": "苏州市"
-		},
-		{
-		  "code": "3206",
-		  "name": "南通市"
-		},
-		{
-		  "code": "3207",
-		  "name": "连云港市"
-		},
-		{
-		  "code": "3208",
-		  "name": "淮安市"
-		},
-		{
-		  "code": "3209",
-		  "name": "盐城市"
-		},
-		{
-		  "code": "3210",
-		  "name": "扬州市"
-		},
-		{
-		  "code": "3211",
-		  "name": "镇江市"
-		},
-		{
-		  "code": "3212",
-		  "name": "泰州市"
-		},
-		{
-		  "code": "3213",
-		  "name": "宿迁市"
-		}
-	  ]
-	},
-	{
-	  "code": "33",
-	  "name": "浙江省",
-	  "childs": [
-		{
-		  "code": "3301",
-		  "name": "杭州市"
-		},
-		{
-		  "code": "3302",
-		  "name": "宁波市"
-		},
-		{
-		  "code": "3303",
-		  "name": "温州市"
-		},
-		{
-		  "code": "3304",
-		  "name": "嘉兴市"
-		},
-		{
-		  "code": "3305",
-		  "name": "湖州市"
-		},
-		{
-		  "code": "3306",
-		  "name": "绍兴市"
-		},
-		{
-		  "code": "3307",
-		  "name": "金华市"
-		},
-		{
-		  "code": "3308",
-		  "name": "衢州市"
-		},
-		{
-		  "code": "3309",
-		  "name": "舟山市"
-		},
-		{
-		  "code": "3310",
-		  "name": "台州市"
-		},
-		{
-		  "code": "3311",
-		  "name": "丽水市"
-		}
-	  ]
-	},
-	{
-	  "code": "34",
-	  "name": "安徽省",
-	  "childs": [
-		{
-		  "code": "3401",
-		  "name": "合肥市"
-		},
-		{
-		  "code": "3402",
-		  "name": "芜湖市"
-		},
-		{
-		  "code": "3403",
-		  "name": "蚌埠市"
-		},
-		{
-		  "code": "3404",
-		  "name": "淮南市"
-		},
-		{
-		  "code": "3405",
-		  "name": "马鞍山市"
-		},
-		{
-		  "code": "3406",
-		  "name": "淮北市"
-		},
-		{
-		  "code": "3407",
-		  "name": "铜陵市"
-		},
-		{
-		  "code": "3408",
-		  "name": "安庆市"
-		},
-		{
-		  "code": "3410",
-		  "name": "黄山市"
-		},
-		{
-		  "code": "3411",
-		  "name": "滁州市"
-		},
-		{
-		  "code": "3412",
-		  "name": "阜阳市"
-		},
-		{
-		  "code": "3413",
-		  "name": "宿州市"
-		},
-		{
-		  "code": "3415",
-		  "name": "六安市"
-		},
-		{
-		  "code": "3416",
-		  "name": "亳州市"
-		},
-		{
-		  "code": "3417",
-		  "name": "池州市"
-		},
-		{
-		  "code": "3418",
-		  "name": "宣城市"
-		}
-	  ]
-	},
-	{
-	  "code": "35",
-	  "name": "福建省",
-	  "childs": [
-		{
-		  "code": "3501",
-		  "name": "福州市"
-		},
-		{
-		  "code": "3502",
-		  "name": "厦门市"
-		},
-		{
-		  "code": "3503",
-		  "name": "莆田市"
-		},
-		{
-		  "code": "3504",
-		  "name": "三明市"
-		},
-		{
-		  "code": "3505",
-		  "name": "泉州市"
-		},
-		{
-		  "code": "3506",
-		  "name": "漳州市"
-		},
-		{
-		  "code": "3507",
-		  "name": "南平市"
-		},
-		{
-		  "code": "3508",
-		  "name": "龙岩市"
-		},
-		{
-		  "code": "3509",
-		  "name": "宁德市"
-		}
-	  ]
-	},
-	{
-	  "code": "36",
-	  "name": "江西省",
-	  "childs": [
-		{
-		  "code": "3601",
-		  "name": "南昌市"
-		},
-		{
-		  "code": "3602",
-		  "name": "景德镇市"
-		},
-		{
-		  "code": "3603",
-		  "name": "萍乡市"
-		},
-		{
-		  "code": "3604",
-		  "name": "九江市"
-		},
-		{
-		  "code": "3605",
-		  "name": "新余市"
-		},
-		{
-		  "code": "3606",
-		  "name": "鹰潭市"
-		},
-		{
-		  "code": "3607",
-		  "name": "赣州市"
-		},
-		{
-		  "code": "3608",
-		  "name": "吉安市"
-		},
-		{
-		  "code": "3609",
-		  "name": "宜春市"
-		},
-		{
-		  "code": "3610",
-		  "name": "抚州市"
-		},
-		{
-		  "code": "3611",
-		  "name": "上饶市"
-		}
-	  ]
-	},
-	{
-	  "code": "37",
-	  "name": "山东省",
-	  "childs": [
-		{
-		  "code": "3701",
-		  "name": "济南市"
-		},
-		{
-		  "code": "3702",
-		  "name": "青岛市"
-		},
-		{
-		  "code": "3703",
-		  "name": "淄博市"
-		},
-		{
-		  "code": "3704",
-		  "name": "枣庄市"
-		},
-		{
-		  "code": "3705",
-		  "name": "东营市"
-		},
-		{
-		  "code": "3706",
-		  "name": "烟台市"
-		},
-		{
-		  "code": "3707",
-		  "name": "潍坊市"
-		},
-		{
-		  "code": "3708",
-		  "name": "济宁市"
-		},
-		{
-		  "code": "3709",
-		  "name": "泰安市"
-		},
-		{
-		  "code": "3710",
-		  "name": "威海市"
-		},
-		{
-		  "code": "3711",
-		  "name": "日照市"
-		},
-		{
-		  "code": "3712",
-		  "name": "莱芜市"
-		},
-		{
-		  "code": "3713",
-		  "name": "临沂市"
-		},
-		{
-		  "code": "3714",
-		  "name": "德州市"
-		},
-		{
-		  "code": "3715",
-		  "name": "聊城市"
-		},
-		{
-		  "code": "3716",
-		  "name": "滨州市"
-		},
-		{
-		  "code": "3717",
-		  "name": "菏泽市"
-		}
-	  ]
-	},
-	{
-	  "code": "41",
-	  "name": "河南省",
-	  "childs": [
-		{
-		  "code": "4101",
-		  "name": "郑州市"
-		},
-		{
-		  "code": "4102",
-		  "name": "开封市"
-		},
-		{
-		  "code": "4103",
-		  "name": "洛阳市"
-		},
-		{
-		  "code": "4104",
-		  "name": "平顶山市"
-		},
-		{
-		  "code": "4105",
-		  "name": "安阳市"
-		},
-		{
-		  "code": "4106",
-		  "name": "鹤壁市"
-		},
-		{
-		  "code": "4107",
-		  "name": "新乡市"
-		},
-		{
-		  "code": "4108",
-		  "name": "焦作市"
-		},
-		{
-		  "code": "4109",
-		  "name": "濮阳市"
-		},
-		{
-		  "code": "4110",
-		  "name": "许昌市"
-		},
-		{
-		  "code": "4111",
-		  "name": "漯河市"
-		},
-		{
-		  "code": "4112",
-		  "name": "三门峡市"
-		},
-		{
-		  "code": "4113",
-		  "name": "南阳市"
-		},
-		{
-		  "code": "4114",
-		  "name": "商丘市"
-		},
-		{
-		  "code": "4115",
-		  "name": "信阳市"
-		},
-		{
-		  "code": "4116",
-		  "name": "周口市"
-		},
-		{
-		  "code": "4117",
-		  "name": "驻马店市"
-		}
-	  ]
-	},
-	{
-	  "code": "42",
-	  "name": "湖北省",
-	  "childs": [
-		{
-		  "code": "4201",
-		  "name": "武汉市"
-		},
-		{
-		  "code": "4202",
-		  "name": "黄石市"
-		},
-		{
-		  "code": "4203",
-		  "name": "十堰市"
-		},
-		{
-		  "code": "4205",
-		  "name": "宜昌市"
-		},
-		{
-		  "code": "4206",
-		  "name": "襄阳市"
-		},
-		{
-		  "code": "4207",
-		  "name": "鄂州市"
-		},
-		{
-		  "code": "4208",
-		  "name": "荆门市"
-		},
-		{
-		  "code": "4209",
-		  "name": "孝感市"
-		},
-		{
-		  "code": "4210",
-		  "name": "荆州市"
-		},
-		{
-		  "code": "4211",
-		  "name": "黄冈市"
-		},
-		{
-		  "code": "4212",
-		  "name": "咸宁市"
-		},
-		{
-		  "code": "4213",
-		  "name": "随州市"
-		},
-		{
-		  "code": "4228",
-		  "name": "恩施土家族苗族自治州"
-		}
-	  ]
-	},
-	{
-	  "code": "43",
-	  "name": "湖南省",
-	  "childs": [
-		{
-		  "code": "4301",
-		  "name": "长沙市"
-		},
-		{
-		  "code": "4302",
-		  "name": "株洲市"
-		},
-		{
-		  "code": "4303",
-		  "name": "湘潭市"
-		},
-		{
-		  "code": "4304",
-		  "name": "衡阳市"
-		},
-		{
-		  "code": "4305",
-		  "name": "邵阳市"
-		},
-		{
-		  "code": "4306",
-		  "name": "岳阳市"
-		},
-		{
-		  "code": "4307",
-		  "name": "常德市"
-		},
-		{
-		  "code": "4308",
-		  "name": "张家界市"
-		},
-		{
-		  "code": "4309",
-		  "name": "益阳市"
-		},
-		{
-		  "code": "4310",
-		  "name": "郴州市"
-		},
-		{
-		  "code": "4311",
-		  "name": "永州市"
-		},
-		{
-		  "code": "4312",
-		  "name": "怀化市"
-		},
-		{
-		  "code": "4313",
-		  "name": "娄底市"
-		},
-		{
-		  "code": "4331",
-		  "name": "湘西土家族苗族自治州"
-		}
-	  ]
-	},
-	{
-	  "code": "44",
-	  "name": "广东省",
-	  "childs": [
-		{
-		  "code": "4401",
-		  "name": "广州市"
-		},
-		{
-		  "code": "4402",
-		  "name": "韶关市"
-		},
-		{
-		  "code": "4403",
-		  "name": "深圳市"
-		},
-		{
-		  "code": "4404",
-		  "name": "珠海市"
-		},
-		{
-		  "code": "4405",
-		  "name": "汕头市"
-		},
-		{
-		  "code": "4406",
-		  "name": "佛山市"
-		},
-		{
-		  "code": "4407",
-		  "name": "江门市"
-		},
-		{
-		  "code": "4408",
-		  "name": "湛江市"
-		},
-		{
-		  "code": "4409",
-		  "name": "茂名市"
-		},
-		{
-		  "code": "4412",
-		  "name": "肇庆市"
-		},
-		{
-		  "code": "4413",
-		  "name": "惠州市"
-		},
-		{
-		  "code": "4414",
-		  "name": "梅州市"
-		},
-		{
-		  "code": "4415",
-		  "name": "汕尾市"
-		},
-		{
-		  "code": "4416",
-		  "name": "河源市"
-		},
-		{
-		  "code": "4417",
-		  "name": "阳江市"
-		},
-		{
-		  "code": "4418",
-		  "name": "清远市"
-		},
-		{
-		  "code": "4419",
-		  "name": "东莞市"
-		},
-		{
-		  "code": "4420",
-		  "name": "中山市"
-		},
-		{
-		  "code": "4451",
-		  "name": "潮州市"
-		},
-		{
-		  "code": "4452",
-		  "name": "揭阳市"
-		},
-		{
-		  "code": "4453",
-		  "name": "云浮市"
-		}
-	  ]
-	},
-	{
-	  "code": "45",
-	  "name": "广西壮族自治区",
-	  "childs": [
-		{
-		  "code": "4501",
-		  "name": "南宁市"
-		},
-		{
-		  "code": "4502",
-		  "name": "柳州市"
-		},
-		{
-		  "code": "4503",
-		  "name": "桂林市"
-		},
-		{
-		  "code": "4504",
-		  "name": "梧州市"
-		},
-		{
-		  "code": "4505",
-		  "name": "北海市"
-		},
-		{
-		  "code": "4506",
-		  "name": "防城港市"
-		},
-		{
-		  "code": "4507",
-		  "name": "钦州市"
-		},
-		{
-		  "code": "4508",
-		  "name": "贵港市"
-		},
-		{
-		  "code": "4509",
-		  "name": "玉林市"
-		},
-		{
-		  "code": "4510",
-		  "name": "百色市"
-		},
-		{
-		  "code": "4511",
-		  "name": "贺州市"
-		},
-		{
-		  "code": "4512",
-		  "name": "河池市"
-		},
-		{
-		  "code": "4513",
-		  "name": "来宾市"
-		},
-		{
-		  "code": "4514",
-		  "name": "崇左市"
-		}
-	  ]
-	},
-	{
-	  "code": "46",
-	  "name": "海南省",
-	  "childs": [
-		{
-		  "code": "4601",
-		  "name": "海口市"
-		},
-		{
-		  "code": "4602",
-		  "name": "三亚市"
-		},
-		{
-		  "code": "4603",
-		  "name": "三沙市"
-		},
-		{
-		  "code": "4604",
-		  "name": "儋州市"
-		}
-	  ]
-	},
-	{
-	  "code": "50",
-	  "name": "重庆市",
-	  "childs": [
-		{
-		  "code": "5001",
-		  "name": "重庆市"
-		}
-	  ]
-	},
-	{
-	  "code": "51",
-	  "name": "四川省",
-	  "childs": [
-		{
-		  "code": "5101",
-		  "name": "成都市"
-		},
-		{
-		  "code": "5103",
-		  "name": "自贡市"
-		},
-		{
-		  "code": "5104",
-		  "name": "攀枝花市"
-		},
-		{
-		  "code": "5105",
-		  "name": "泸州市"
-		},
-		{
-		  "code": "5106",
-		  "name": "德阳市"
-		},
-		{
-		  "code": "5107",
-		  "name": "绵阳市"
-		},
-		{
-		  "code": "5108",
-		  "name": "广元市"
-		},
-		{
-		  "code": "5109",
-		  "name": "遂宁市"
-		},
-		{
-		  "code": "5110",
-		  "name": "内江市"
-		},
-		{
-		  "code": "5111",
-		  "name": "乐山市"
-		},
-		{
-		  "code": "5113",
-		  "name": "南充市"
-		},
-		{
-		  "code": "5114",
-		  "name": "眉山市"
-		},
-		{
-		  "code": "5115",
-		  "name": "宜宾市"
-		},
-		{
-		  "code": "5116",
-		  "name": "广安市"
-		},
-		{
-		  "code": "5117",
-		  "name": "达州市"
-		},
-		{
-		  "code": "5118",
-		  "name": "雅安市"
-		},
-		{
-		  "code": "5119",
-		  "name": "巴中市"
-		},
-		{
-		  "code": "5120",
-		  "name": "资阳市"
-		},
-		{
-		  "code": "5132",
-		  "name": "阿坝藏族羌族自治州"
-		},
-		{
-		  "code": "5133",
-		  "name": "甘孜藏族自治州"
-		},
-		{
-		  "code": "5134",
-		  "name": "凉山彝族自治州"
-		}
-	  ]
-	},
-	{
-	  "code": "52",
-	  "name": "贵州省",
-	  "childs": [
-		{
-		  "code": "5201",
-		  "name": "贵阳市"
-		},
-		{
-		  "code": "5202",
-		  "name": "六盘水市"
-		},
-		{
-		  "code": "5203",
-		  "name": "遵义市"
-		},
-		{
-		  "code": "5204",
-		  "name": "安顺市"
-		},
-		{
-		  "code": "5205",
-		  "name": "毕节市"
-		},
-		{
-		  "code": "5206",
-		  "name": "铜仁市"
-		},
-		{
-		  "code": "5223",
-		  "name": "黔西南布依族苗族自治州"
-		},
-		{
-		  "code": "5226",
-		  "name": "黔东南苗族侗族自治州"
-		},
-		{
-		  "code": "5227",
-		  "name": "黔南布依族苗族自治州"
-		}
-	  ]
-	},
-	{
-	  "code": "53",
-	  "name": "云南省",
-	  "childs": [
-		{
-		  "code": "5301",
-		  "name": "昆明市"
-		},
-		{
-		  "code": "5303",
-		  "name": "曲靖市"
-		},
-		{
-		  "code": "5304",
-		  "name": "玉溪市"
-		},
-		{
-		  "code": "5305",
-		  "name": "保山市"
-		},
-		{
-		  "code": "5306",
-		  "name": "昭通市"
-		},
-		{
-		  "code": "5307",
-		  "name": "丽江市"
-		},
-		{
-		  "code": "5308",
-		  "name": "普洱市"
-		},
-		{
-		  "code": "5309",
-		  "name": "临沧市"
-		},
-		{
-		  "code": "5323",
-		  "name": "楚雄彝族自治州"
-		},
-		{
-		  "code": "5325",
-		  "name": "红河哈尼族彝族自治州"
-		},
-		{
-		  "code": "5326",
-		  "name": "文山壮族苗族自治州"
-		},
-		{
-		  "code": "5328",
-		  "name": "西双版纳傣族自治州"
-		},
-		{
-		  "code": "5329",
-		  "name": "大理白族自治州"
-		},
-		{
-		  "code": "5331",
-		  "name": "德宏傣族景颇族自治州"
-		},
-		{
-		  "code": "5333",
-		  "name": "怒江傈僳族自治州"
-		},
-		{
-		  "code": "5334",
-		  "name": "迪庆藏族自治州"
-		}
-	  ]
-	},
-	{
-	  "code": "54",
-	  "name": "西藏自治区",
-	  "childs": [
-		{
-		  "code": "5401",
-		  "name": "拉萨市"
-		},
-		{
-		  "code": "5402",
-		  "name": "日喀则市"
-		},
-		{
-		  "code": "5403",
-		  "name": "昌都市"
-		},
-		{
-		  "code": "5404",
-		  "name": "林芝市"
-		},
-		{
-		  "code": "5405",
-		  "name": "山南市"
-		},
-		{
-		  "code": "5424",
-		  "name": "那曲地区"
-		},
-		{
-		  "code": "5425",
-		  "name": "阿里地区"
-		}
-	  ]
-	},
-	{
-	  "code": "61",
-	  "name": "陕西省",
-	  "childs": [
-		{
-		  "code": "6101",
-		  "name": "西安市"
-		},
-		{
-		  "code": "6102",
-		  "name": "铜川市"
-		},
-		{
-		  "code": "6103",
-		  "name": "宝鸡市"
-		},
-		{
-		  "code": "6104",
-		  "name": "咸阳市"
-		},
-		{
-		  "code": "6105",
-		  "name": "渭南市"
-		},
-		{
-		  "code": "6106",
-		  "name": "延安市"
-		},
-		{
-		  "code": "6107",
-		  "name": "汉中市"
-		},
-		{
-		  "code": "6108",
-		  "name": "榆林市"
-		},
-		{
-		  "code": "6109",
-		  "name": "安康市"
-		},
-		{
-		  "code": "6110",
-		  "name": "商洛市"
-		}
-	  ]
-	},
-	{
-	  "code": "62",
-	  "name": "甘肃省",
-	  "childs": [
-		{
-		  "code": "6201",
-		  "name": "兰州市"
-		},
-		{
-		  "code": "6202",
-		  "name": "嘉峪关市"
-		},
-		{
-		  "code": "6203",
-		  "name": "金昌市"
-		},
-		{
-		  "code": "6204",
-		  "name": "白银市"
-		},
-		{
-		  "code": "6205",
-		  "name": "天水市"
-		},
-		{
-		  "code": "6206",
-		  "name": "武威市"
-		},
-		{
-		  "code": "6207",
-		  "name": "张掖市"
-		},
-		{
-		  "code": "6208",
-		  "name": "平凉市"
-		},
-		{
-		  "code": "6209",
-		  "name": "酒泉市"
-		},
-		{
-		  "code": "6210",
-		  "name": "庆阳市"
-		},
-		{
-		  "code": "6211",
-		  "name": "定西市"
-		},
-		{
-		  "code": "6212",
-		  "name": "陇南市"
-		},
-		{
-		  "code": "6229",
-		  "name": "临夏回族自治州"
-		},
-		{
-		  "code": "6230",
-		  "name": "甘南藏族自治州"
-		}
-	  ]
-	},
-	{
-	  "code": "63",
-	  "name": "青海省",
-	  "childs": [
-		{
-		  "code": "6301",
-		  "name": "西宁市"
-		},
-		{
-		  "code": "6302",
-		  "name": "海东市"
-		},
-		{
-		  "code": "6322",
-		  "name": "海北藏族自治州"
-		},
-		{
-		  "code": "6323",
-		  "name": "黄南藏族自治州"
-		},
-		{
-		  "code": "6325",
-		  "name": "海南藏族自治州"
-		},
-		{
-		  "code": "6326",
-		  "name": "果洛藏族自治州"
-		},
-		{
-		  "code": "6327",
-		  "name": "玉树藏族自治州"
-		},
-		{
-		  "code": "6328",
-		  "name": "海西蒙古族藏族自治州"
-		}
-	  ]
-	},
-	{
-	  "code": "64",
-	  "name": "宁夏回族自治区",
-	  "childs": [
-		{
-		  "code": "6401",
-		  "name": "银川市"
-		},
-		{
-		  "code": "6402",
-		  "name": "石嘴山市"
-		},
-		{
-		  "code": "6403",
-		  "name": "吴忠市"
-		},
-		{
-		  "code": "6404",
-		  "name": "固原市"
-		},
-		{
-		  "code": "6405",
-		  "name": "中卫市"
-		}
-	  ]
-	},
-	{
-	  "code": "65",
-	  "name": "新疆维吾尔自治区",
-	  "childs": [
-		{
-		  "code": "6501",
-		  "name": "乌鲁木齐市"
-		},
-		{
-		  "code": "6502",
-		  "name": "克拉玛依市"
-		},
-		{
-		  "code": "6504",
-		  "name": "吐鲁番市"
-		},
-		{
-		  "code": "6505",
-		  "name": "哈密市"
-		},
-		{
-		  "code": "6523",
-		  "name": "昌吉回族自治州"
-		},
-		{
-		  "code": "6527",
-		  "name": "博尔塔拉蒙古自治州"
-		},
-		{
-		  "code": "6528",
-		  "name": "巴音郭楞蒙古自治州"
-		},
-		{
-		  "code": "6529",
-		  "name": "阿克苏地区"
-		},
-		{
-		  "code": "6530",
-		  "name": "克孜勒苏柯尔克孜自治州"
-		},
-		{
-		  "code": "6531",
-		  "name": "喀什地区"
-		},
-		{
-		  "code": "6532",
-		  "name": "和田地区"
-		},
-		{
-		  "code": "6540",
-		  "name": "伊犁哈萨克自治州"
-		},
-		{
-		  "code": "6542",
-		  "name": "塔城地区"
-		},
-		{
-		  "code": "6543",
-		  "name": "阿勒泰地区"
-		}
-	  ]
-	},
-	{
-	  "code": "71",
-	  "name": "台湾省",
-	  "childs": []
-	},
-	{
-	  "code": "81",
-	  "name": "香港特别行政区",
-	  "childs": []
-	},
-	{
-	  "code": "82",
-	  "name": "澳门特别行政区",
-	  "childs": []
-	}
-  ]
+{
+  "北京市": [
+    "北京市"
+  ],
+  "天津市": [
+    "天津市"
+  ],
+  "河北省": [
+    "石家庄市",
+    "唐山市",
+    "秦皇岛市",
+    "邯郸市",
+    "邢台市",
+    "保定市",
+    "张家口市",
+    "承德市",
+    "沧州市",
+    "廊坊市",
+    "衡水市"
+  ],
+  "山西省": [
+    "太原市",
+    "大同市",
+    "阳泉市",
+    "长治市",
+    "晋城市",
+    "朔州市",
+    "晋中市",
+    "运城市",
+    "忻州市",
+    "临汾市",
+    "吕梁市"
+  ],
+  "内蒙古自治区": [
+    "呼和浩特市",
+    "包头市",
+    "乌海市",
+    "赤峰市",
+    "通辽市",
+    "鄂尔多斯市",
+    "呼伦贝尔市",
+    "巴彦淖尔市",
+    "乌兰察布市",
+    "兴安盟",
+    "锡林郭勒盟",
+    "阿拉善盟"
+  ],
+  "辽宁省": [
+    "沈阳市",
+    "大连市",
+    "鞍山市",
+    "抚顺市",
+    "本溪市",
+    "丹东市",
+    "锦州市",
+    "营口市",
+    "阜新市",
+    "辽阳市",
+    "盘锦市",
+    "铁岭市",
+    "朝阳市",
+    "葫芦岛市"
+  ],
+  "吉林省": [
+    "长春市",
+    "吉林市",
+    "四平市",
+    "辽源市",
+    "通化市",
+    "白山市",
+    "松原市",
+    "白城市",
+    "延边朝鲜族自治州"
+  ],
+  "黑龙江省": [
+    "哈尔滨市",
+    "齐齐哈尔市",
+    "鸡西市",
+    "鹤岗市",
+    "双鸭山市",
+    "大庆市",
+    "伊春市",
+    "佳木斯市",
+    "七台河市",
+    "牡丹江市",
+    "黑河市",
+    "绥化市",
+    "大兴安岭地区"
+  ],
+  "上海市": [
+    "上海市"
+  ],
+  "江苏省": [
+    "南京市",
+    "无锡市",
+    "徐州市",
+    "常州市",
+    "苏州市",
+    "南通市",
+    "连云港市",
+    "淮安市",
+    "盐城市",
+    "扬州市",
+    "镇江市",
+    "泰州市",
+    "宿迁市"
+  ],
+  "浙江省": [
+    "杭州市",
+    "宁波市",
+    "温州市",
+    "嘉兴市",
+    "湖州市",
+    "绍兴市",
+    "金华市",
+    "衢州市",
+    "舟山市",
+    "台州市",
+    "丽水市"
+  ],
+  "安徽省": [
+    "合肥市",
+    "芜湖市",
+    "蚌埠市",
+    "淮南市",
+    "马鞍山市",
+    "淮北市",
+    "铜陵市",
+    "安庆市",
+    "黄山市",
+    "滁州市",
+    "阜阳市",
+    "宿州市",
+    "六安市",
+    "亳州市",
+    "池州市",
+    "宣城市"
+  ],
+  "福建省": [
+    "福州市",
+    "厦门市",
+    "莆田市",
+    "三明市",
+    "泉州市",
+    "漳州市",
+    "南平市",
+    "龙岩市",
+    "宁德市"
+  ],
+  "江西省": [
+    "南昌市",
+    "景德镇市",
+    "萍乡市",
+    "九江市",
+    "新余市",
+    "鹰潭市",
+    "赣州市",
+    "吉安市",
+    "宜春市",
+    "抚州市",
+    "上饶市"
+  ],
+  "山东省": [
+    "济南市",
+    "青岛市",
+    "淄博市",
+    "枣庄市",
+    "东营市",
+    "烟台市",
+    "潍坊市",
+    "济宁市",
+    "泰安市",
+    "威海市",
+    "日照市",
+    "莱芜市",
+    "临沂市",
+    "德州市",
+    "聊城市",
+    "滨州市",
+    "菏泽市"
+  ],
+  "河南省": [
+    "郑州市",
+    "开封市",
+    "洛阳市",
+    "平顶山市",
+    "安阳市",
+    "鹤壁市",
+    "新乡市",
+    "焦作市",
+    "濮阳市",
+    "许昌市",
+    "漯河市",
+    "三门峡市",
+    "南阳市",
+    "商丘市",
+    "信阳市",
+    "周口市",
+    "驻马店市"
+  ],
+  "湖北省": [
+    "武汉市",
+    "黄石市",
+    "十堰市",
+    "宜昌市",
+    "襄阳市",
+    "鄂州市",
+    "荆门市",
+    "孝感市",
+    "荆州市",
+    "黄冈市",
+    "咸宁市",
+    "随州市",
+    "恩施土家族苗族自治州"
+  ],
+  "湖南省": [
+    "长沙市",
+    "株洲市",
+    "湘潭市",
+    "衡阳市",
+    "邵阳市",
+    "岳阳市",
+    "常德市",
+    "张家界市",
+    "益阳市",
+    "郴州市",
+    "永州市",
+    "怀化市",
+    "娄底市",
+    "湘西土家族苗族自治州"
+  ],
+  "广东省": [
+    "广州市",
+    "韶关市",
+    "深圳市",
+    "珠海市",
+    "汕头市",
+    "佛山市",
+    "江门市",
+    "湛江市",
+    "茂名市",
+    "肇庆市",
+    "惠州市",
+    "梅州市",
+    "汕尾市",
+    "河源市",
+    "阳江市",
+    "清远市",
+    "东莞市",
+    "中山市",
+    "潮州市",
+    "揭阳市",
+    "云浮市"
+  ],
+  "广西壮族自治区": [
+    "南宁市",
+    "柳州市",
+    "桂林市",
+    "梧州市",
+    "北海市",
+    "防城港市",
+    "钦州市",
+    "贵港市",
+    "玉林市",
+    "百色市",
+    "贺州市",
+    "河池市",
+    "来宾市",
+    "崇左市"
+  ],
+  "海南省": [
+    "海口市",
+    "三亚市",
+    "三沙市",
+    "儋州市"
+  ],
+  "重庆市": [
+    "重庆市"
+  ],
+  "四川省": [
+    "成都市",
+    "自贡市",
+    "攀枝花市",
+    "泸州市",
+    "德阳市",
+    "绵阳市",
+    "广元市",
+    "遂宁市",
+    "内江市",
+    "乐山市",
+    "南充市",
+    "眉山市",
+    "宜宾市",
+    "广安市",
+    "达州市",
+    "雅安市",
+    "巴中市",
+    "资阳市",
+    "阿坝藏族羌族自治州",
+    "甘孜藏族自治州",
+    "凉山彝族自治州"
+  ],
+  "贵州省": [
+    "贵阳市",
+    "六盘水市",
+    "遵义市",
+    "安顺市",
+    "毕节市",
+    "铜仁市",
+    "黔西南布依族苗族自治州",
+    "黔东南苗族侗族自治州",
+    "黔南布依族苗族自治州"
+  ],
+  "云南省": [
+    "昆明市",
+    "曲靖市",
+    "玉溪市",
+    "保山市",
+    "昭通市",
+    "丽江市",
+    "普洱市",
+    "临沧市",
+    "楚雄彝族自治州",
+    "红河哈尼族彝族自治州",
+    "文山壮族苗族自治州",
+    "西双版纳傣族自治州",
+    "大理白族自治州",
+    "德宏傣族景颇族自治州",
+    "怒江傈僳族自治州",
+    "迪庆藏族自治州"
+  ],
+  "西藏自治区": [
+    "拉萨市",
+    "日喀则市",
+    "昌都市",
+    "林芝市",
+    "山南市",
+    "那曲地区",
+    "阿里地区"
+  ],
+  "陕西省": [
+    "西安市",
+    "铜川市",
+    "宝鸡市",
+    "咸阳市",
+    "渭南市",
+    "延安市",
+    "汉中市",
+    "榆林市",
+    "安康市",
+    "商洛市"
+  ],
+  "甘肃省": [
+    "兰州市",
+    "嘉峪关市",
+    "金昌市",
+    "白银市",
+    "天水市",
+    "武威市",
+    "张掖市",
+    "平凉市",
+    "酒泉市",
+    "庆阳市",
+    "定西市",
+    "陇南市",
+    "临夏回族自治州",
+    "甘南藏族自治州"
+  ],
+  "青海省": [
+    "西宁市",
+    "海东市",
+    "海北藏族自治州",
+    "黄南藏族自治州",
+    "海南藏族自治州",
+    "果洛藏族自治州",
+    "玉树藏族自治州",
+    "海西蒙古族藏族自治州"
+  ],
+  "宁夏回族自治区": [
+    "银川市",
+    "石嘴山市",
+    "吴忠市",
+    "固原市",
+    "中卫市"
+  ],
+  "新疆维吾尔自治区": [
+    "乌鲁木齐市",
+    "克拉玛依市",
+    "吐鲁番市",
+    "哈密市",
+    "昌吉回族自治州",
+    "博尔塔拉蒙古自治州",
+    "巴音郭楞蒙古自治州",
+    "阿克苏地区",
+    "克孜勒苏柯尔克孜自治州",
+    "喀什地区",
+    "和田地区",
+    "伊犁哈萨克自治州",
+    "塔城地区",
+    "阿勒泰地区"
+  ],
+  "台湾省": [],
+  "香港特别行政区": [],
+  "澳门特别行政区": []
+}
 `

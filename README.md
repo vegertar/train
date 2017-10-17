@@ -10,6 +10,7 @@
         - [Basic HTTP Server](#basic-http-server)
         - [Speed Measurement](#speed-measurement)
         - [Isolation](#isolation)
+        - [Connectivity](#connectivity)
 
 <!-- /TOC -->
 # Train
@@ -306,18 +307,24 @@ In the end, running `go test` should print `PASS`. Readers might notice that `co
 
 ### Isolation
 
-At previous section, we have created a HTTP server, however, there was no further information except a port to identify a host. Right here, we're gonna be citylizing a HTTP server by associating a port with a 4-digit [city code](https://raw.githubusercontent.com/modood/Administrative-divisions-of-China/master/dist/pc-code.json). Actually, there are 338 cities in total, it is easy to use a hash way or directly lookup a table.
+At previous section, we have created a HTTP server, however, there was no further information except a port to identify a host. Right here, we're gonna be citylizing a HTTP server by associating a port with a [city](https://raw.githubusercontent.com/modood/Administrative-divisions-of-China/master/dist/pc.json). Actually, there are 338 cities in total, it is easy to use a hash way or directly lookup a table.
 
 Next, it is necessary to define an affinity between cities. Let's use 1-digit numbers as the affinity constant, 0 means a city is completely isolate to another, a greater number means a more open isolation, until 9 which means a city is thoroughly open to another. For simplicity, considering of a demonstrated function below.
 
 ```go
-func CityAffinity(codeA, codeB string) int {
+type City struct {
+	Name     string
+	Province string
+	District string
+}
+
+func CityAffinity(a, b City) int {
 	// for same cities
-	if codeA == codeA { return 9 }
+	if a.Name == b.Name { return 9 }
 	// for within a same province
-	if codeA[:2] == codeB[:2] {	return 5 }
+	if a.Province == b.Province { return 5 }
 	// for within a same district
-	if codeA[:1] == codeB[:1] { return 1 }
+	if a.District == b.District { return 1 }
 	// others
 	return 0
 }
@@ -332,7 +339,7 @@ In more ordinary scenes, affinity constant is defined between hosts, in which th
       |    .      (B)
       |   (A)
     O +------------------- x (city)
- ```
+```
 
 After calculating a value of affinity between hosts, we eventually need to map it into a latency and apply which by `comcast`.
 
