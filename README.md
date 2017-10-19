@@ -309,7 +309,7 @@ In the end, running `go test` should print `PASS`. Readers might notice that `co
 
 At previous section, we have created a HTTP server, however, there was no further information except a port to identify a host. Right here, we're gonna be citylizing a HTTP server by associating a port with a [city](https://raw.githubusercontent.com/modood/Administrative-divisions-of-China/master/dist/pc.json). Actually, there are 338 cities in total, it is easy to use a hash way or directly lookup a table.
 
-Next, it is necessary to define an affinity between cities. Let's use 1-digit numbers as the affinity constant, 0 means a city is completely isolate to another, a greater number means a more open isolation, until 9 which means a city is thoroughly open to another. For simplicity, considering of a demonstrated function below.
+Next, it is necessary to define an isolation between cities. Let's use 1-digit numbers as the isolation constant, 9 means a city is completely isolate to another, a less number means a more open isolation, until 0 which means a city is thoroughly open to another. For simplicity, considering of a demonstrated function below.
 
 ```go
 type City struct {
@@ -318,19 +318,20 @@ type City struct {
 	District string
 }
 
-func CityAffinity(a, b City) int {
+func CityIsolation(a, b City) int {
 	// for same cities
-	if a.Name == b.Name { return 9 }
+	if a.Name == b.Name { return 0 }
 	// for within a same province
-	if a.Province == b.Province { return 5 }
+	if a.Province == b.Province { return 1 }
 	// for within a same district
-	if a.District == b.District { return 1 }
+	if a.District == b.District { return 2 }
 	// others
-	return 0
+	// ...
+	return 9
 }
 ```
 
-In more ordinary scenes, affinity constant is defined between hosts, in which the isolation is not only limited by city, but also, as we said, by ISP. So, a coordinate system can be given as below, the x-axis orders cities by administrative regions (e.g. two cities in same province are placed closer than not), the y-axis orders ISPs by business relationships (e.g. CMCC and CNNET can be put together). A and B are a host within an arbitrary city and ISP respectively, then segment AB is used to estimate the value of affinity between two hosts. Obviously, less distance stands for less isolation.
+In more ordinary scenes, isolation constant is defined between hosts, in which the property is not only limited by city, but also, as we said, by ISP. So, a coordinate system can be given as below, the x-axis orders cities by administrative regions (e.g. two cities in same province are placed closer than not), the y-axis orders ISPs by business relationships (e.g. CMCC and CNNET can be put together). A and B are a host within an arbitrary city and ISP respectively, then segment AB is used to estimate the value of affinity between two hosts. Obviously, less distance stands for less isolation.
 
 ```
       | y (ISP)
@@ -341,8 +342,22 @@ In more ordinary scenes, affinity constant is defined between hosts, in which th
     O +------------------- x (city)
 ```
 
+An affinity structure might be defined as similar as below, which contains necessary properties indicating how good two hosts are reachable from each other.
+
+```go
+// Affinity contains affinity values between two points in each direction.
+type Affinity []struct {
+	// A is the start point.
+	A Point
+	// B is the end point.
+	B Point
+	// PacketLoss is the packet loss in percent.
+	PacketLoss int
+}
+```
+
 After calculating a value of affinity between hosts, we eventually need to map it into a latency and apply which by `comcast`.
 
 ### Connectivity
 
-TODO: check if this graph is connected
+TODO: Using above definition of affinity, we could draw a graph.

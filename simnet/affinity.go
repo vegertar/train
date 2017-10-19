@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/rand"
+	"sort"
 	"strconv"
 )
 
@@ -16,14 +18,14 @@ type City struct {
 }
 
 func (c City) String() string {
-	return fmt.Sprintf("%s(%d)", c.Name, c.ID)
+	return fmt.Sprintf("%s%s%s(%d)", c.District, c.Province, c.Name, c.ID)
 }
 
 // ISP represents an ISP.
-type ISP int
+type ISP float64
 
 func (i ISP) String() string {
-	return fmt.Sprintf("ISP-%d", int(i))
+	return fmt.Sprintf("ISP(%f)", float64(i))
 }
 
 // Point is a pair of city and ISP.
@@ -35,7 +37,8 @@ type Point struct {
 // NewPoint creates a point from a port integer.
 func NewPoint(port int) Point {
 	city := names[port%len(names)]
-	return Point{cities[city], ISP(port % numberOfISP)}
+	isp := isps[port%len(isps)]
+	return Point{cities[city], isp}
 }
 
 // NewPointFromCity creates a point from a city where specified by name.
@@ -46,30 +49,94 @@ func NewPointFromCity(city string) Point {
 // Isolate returns a value of isolation of two points.
 func Isolate(a, b Point) float64 {
 	aX := float64(a.City.ID-minCityID) / float64(maxCityID-minCityID)
-	aY := float64(a.ISP) / float64(numberOfISP-1)
+	aY := float64(a.ISP-minISP) / float64(maxISP-minISP)
 
 	bX := float64(b.City.ID-minCityID) / float64(maxCityID-minCityID)
-	bY := float64(b.ISP) / float64(numberOfISP-1)
+	bY := float64(b.ISP-minISP) / float64(maxISP-minISP)
 
 	diffX, diffY := aX-bX, aY-bY
 	return math.Sqrt(diffX*diffX + diffY*diffY)
 }
 
-// SetAffinity sets arbitrary ports affinity.
-func SetAffinity(ports []int) {
-	for _, a := range ports {
-		for _, b := range ports {
-			pA, pB := NewPoint(a), NewPoint(b)
-			isolation := Isolate(pA, pB)
-			fmt.Println(isolation)
+// Affinity contains affinity values between two points in each direction.
+type Affinity []struct {
+	// A is the start point.
+	A Point
+	// B is the end point.
+	B Point
+	// PacketLoss is the packet loss in percent.
+	PacketLoss int
+}
+
+// NewAffinity produces arbitrary affinity.
+func NewAffinity(points []Point) Affinity {
+	r := make(Affinity, 0, len(points))
+	for _, a := range points {
+		for _, b := range points {
+			if a == b {
+				continue
+			}
+
+			reachable := false
+
+			if a.City.Province == b.City.Province && a.ISP == b.ISP {
+				// All IDCs within same province and same ISP construct a connected graph.
+				reachable = true
+			}
+
+			if a.City.Province != b.City.Province && a.ISP == b.ISP {
+				// Existing an IDC on capital of down region can reach to an IDC on capital of up region with same ISP.
+				if a.City.District == b.City.District && secondClassInfluxes[b.City.Name] {
+					reachable = true
+				} else if firstClassCores[b.City.Name] {
+					reachable = true
+				}
+			}
+
+			if a.City.Province == b.City.Province && a.ISP != b.ISP {
+				// Existing an IDC can reach to one of the base ISPs for any ISP within same province. Base is the minimal set of ISPs that our management machine built on.
+				reachable = baseISPs[int(b.ISP)]
+			}
+
+			var z struct {
+				A          Point
+				B          Point
+				PacketLoss int
+			}
+
+			z.A = a
+			z.B = b
+			z.PacketLoss = 100
+			if reachable {
+				z.PacketLoss = int(Isolate(a, b) * 100)
+			}
+			r = append(r, z)
 		}
 	}
+	return r
 }
 
 var (
 	cities               = make(map[string]City)
 	minCityID, maxCityID int
 	names                []string
+	firstClassCores      = map[string]bool{
+		"北京市": true,
+		"上海市": true,
+		"广州市": true,
+	}
+	secondClassInfluxes = map[string]bool{
+		"成都市": true,
+		"武汉市": true,
+		"西安市": true,
+		"沈阳市": true,
+	}
+
+	isps           []ISP
+	minISP, maxISP ISP
+	ispMean        = 0
+	ispStddev      = 1
+	baseISPs       = make(map[int]bool)
 )
 
 func init() {
@@ -122,11 +189,26 @@ func init() {
 			cities[city.Name] = city
 			names = append(names, city.Name)
 		}
+		sort.Strings(names)
+	}
+
+	// lets ISP follow normal distribution, so makes base ISPs easily
+	baseISPs[ispMean] = true
+	baseISPs[ispMean-ispStddev] = true
+	baseISPs[ispMean+ispStddev] = true
+	minISP = ISP(math.MaxFloat64)
+	const numberOfISP = 100
+	for i := 0; i < numberOfISP; i++ {
+		isp := ISP(rand.NormFloat64()*float64(ispStddev) + float64(ispMean))
+		isps = append(isps, isp)
+		if isp < minISP {
+			minISP = isp
+		}
+		if isp > maxISP {
+			maxISP = isp
+		}
 	}
 }
-
-// it's no big deal that what ISPs are, so just given the amounts of ISP.
-const numberOfISP = 42
 
 // chinaCity is a JSON string downloaded from https://raw.githubusercontent.com/modood/Administrative-divisions-of-China/master/dist/pc.json,
 // which contains all China provinces and cities
