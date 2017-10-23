@@ -3,10 +3,13 @@ package simnet
 import (
 	"encoding/json"
 	"fmt"
+	"image/color"
 	"math"
 	"math/rand"
 	"sort"
 	"strconv"
+
+	"github.com/mmcloughlin/globe"
 )
 
 // City contains basic properties about a city.
@@ -66,6 +69,57 @@ type Affinity []struct {
 	B Point
 	// PacketLoss is the packet loss in percent.
 	PacketLoss int
+}
+
+// Draw renders a graph at given png file.
+func (graph Affinity) Draw(png string, side int) error {
+	g := globe.New()
+	g.DrawGraticule(10.0)
+	g.DrawCountryBoundaries()
+
+	drew := make(map[string]bool)
+	for _, s := range graph {
+		radius := 0.02
+		name := s.A.City.Name
+		a, _ := GetLocation(name)
+		if !drew[name] {
+			if firstClassCores[name] {
+				radius = 0.08
+			} else if secondClassInfluxes[name] {
+				radius = 0.05
+			}
+			g.DrawDot(a.Latitude, a.Longitude, radius)
+			drew[name] = true
+		}
+
+		name = s.B.City.Name
+		b, _ := GetLocation(name)
+		if !drew[name] {
+			if firstClassCores[name] {
+				radius = 0.08
+			} else if secondClassInfluxes[name] {
+				radius = 0.05
+			}
+			g.DrawDot(b.Latitude, b.Longitude, radius)
+			drew[name] = true
+		}
+
+		if s.PacketLoss < 100 {
+			c := color.NRGBA{0x00, 0x64, 0x3c, 192}
+			if firstClassCores[name] {
+				c = color.NRGBA{255, 0, 0, 255}
+			}
+			g.DrawLine(
+				a.Latitude, a.Longitude,
+				b.Latitude, b.Longitude,
+				globe.Color(c),
+			)
+		}
+	}
+
+	center, _ := GetLocation("北京市")
+	g.CenterOn(center.Latitude, center.Longitude)
+	return g.SavePNG(png, side)
 }
 
 // NewAffinity produces arbitrary affinity.
@@ -165,7 +219,7 @@ func init() {
 			case "广西壮族自治区", "广东省", "海南省":
 				city.District = "华南"
 				districtIndex = 3
-			case "山东省", "江苏省", "安徽省", "浙江省", "福建省", "江西省":
+			case "上海市", "山东省", "江苏省", "安徽省", "浙江省", "福建省", "江西省":
 				city.District = "华东"
 				districtIndex = 4
 			case "新疆维吾尔自治区", "青海省", "甘肃省", "宁夏回族自治区", "陕西省":
@@ -174,6 +228,9 @@ func init() {
 			case "西藏自治区", "四川省", "重庆市", "贵州省", "云南省":
 				city.District = "西南"
 				districtIndex = 6
+			case "黑龙江省", "吉林省", "辽宁省":
+				city.District = "东北"
+				districtIndex = 7
 			default:
 				continue
 			}
@@ -211,7 +268,7 @@ func init() {
 }
 
 // chinaCity is a JSON string downloaded from https://raw.githubusercontent.com/modood/Administrative-divisions-of-China/master/dist/pc.json,
-// which contains all China provinces and cities
+// which contains all China provinces and prefectural cities
 const chinaCity = `
 {
   "北京市": [

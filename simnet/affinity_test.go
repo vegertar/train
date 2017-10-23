@@ -56,7 +56,9 @@ func TestAffinity(t *testing.T) {
 	for i := 0; i < len(names); i++ {
 		points = append(points, NewPoint(i))
 	}
-	for _, z := range NewAffinity(points) {
+
+	g := NewAffinity(points)
+	for _, z := range g {
 		if z.A.City.Province == z.B.City.Province && z.A.ISP == z.B.ISP {
 			// All IDCs within same province and same ISP construct a connected graph.
 			if z.PacketLoss == 100 {
@@ -80,4 +82,11 @@ func TestAffinity(t *testing.T) {
 			}
 		}
 	}
+
+	t.Run("draw", func(t *testing.T) {
+		err := g.Draw("affinity.png", 1800)
+		if err != nil {
+			t.Error(err)
+		}
+	})
 }

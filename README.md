@@ -342,7 +342,7 @@ In more ordinary scenes, isolation constant is defined between hosts, in which t
     O +------------------- x (city)
 ```
 
-An affinity structure might be defined as similar as below, which contains necessary properties indicating how good two hosts are reachable from each other.
+An affinity structure might be defined as similar as below, which contains necessary properties indicating how well two hosts reach each other.
 
 ```go
 // Affinity contains affinity values between two points in each direction.
